@@ -6,6 +6,7 @@ import zipfile
 import struct
 import gzip
 import zlib
+import json
 from .model import SdocDocument, SdocPage, SdocStroke, SdocPoint
 
 class SdocImporter:
