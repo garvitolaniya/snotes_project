@@ -1,13 +1,11 @@
 # File: run_extractor.py
-# This version includes the missing 'import json' line.
+# Location: snotes_project/run_extractor.py
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
-import json  # <<< THIS LINE WAS MISSING
+import json
 import threading
-
-# This imports the code from the 'snotes_reader' folder
 from snotes_reader.sdoc_importer import SdocImporter
 
 def extract_handwriting_data(sdocx_path):
@@ -25,13 +23,15 @@ def extract_handwriting_data(sdocx_path):
                 all_strokes.append(stroke_points)
         return all_strokes
     except Exception as e:
-        return f"An error occurred: {e}"
+        # Provide more detailed error information
+        import traceback
+        return f"An error occurred: {e}\n\nTraceback:\n{traceback.format_exc()}"
 
 # --- GUI Application Class ---
 class FinalExtractorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Final Samsung Notes Extractor")
+        self.root.title("Samsung Notes Extractor")
         self.root.geometry("500x250")
         self.root.resizable(False, False)
         self.input_file_path = ""
@@ -74,7 +74,7 @@ class FinalExtractorApp:
         result = extract_handwriting_data(self.input_file_path)
         if isinstance(result, list):
             if not result:
-                messagebox.showwarning("Warning", "Extraction was successful, but no handwriting strokes were found in the file.")
+                messagebox.showwarning("Warning", "Extraction was successful, but no handwriting strokes were found in this file.")
                 self.status_label.config(text="✅ Success, but no strokes found.")
                 return
             try:

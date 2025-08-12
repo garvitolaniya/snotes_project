@@ -1,5 +1,6 @@
 # File: sdoc_importer.py
-# This is the definitive version with the corrected identifier location.
+# Location: snotes_project/snotes_reader/sdoc_importer.py
+# This is the full, complete, and official parsing logic.
 
 import zipfile
 import struct
@@ -18,8 +19,8 @@ class SdocImporter:
                         page = self._parse_page(page_content)
                         if page:
                             doc.pages.append(page)
-        except (zipfile.BadZipFile, FileNotFoundError):
-            raise IOError("Failed to open or read the sdocx file.")
+        except (zipfile.BadZipFile, FileNotFoundError) as e:
+            raise IOError(f"Failed to open or read the sdocx file: {e}")
         return doc
 
     def _parse_page(self, content: bytes) -> SdocPage:
@@ -35,26 +36,27 @@ class SdocImporter:
                 chunk_type, chunk_length = struct.unpack_from('<II', content, offset)
                 offset += 8
                 chunk_data_offset = offset
-                if chunk_length == 0: break
+                if chunk_length == 0 and chunk_type == 0: break
+                
                 if chunk_type == 2:
-                    self._parse_chunk_type_2(content[chunk_data_offset:chunk_data_offset + chunk_length], page)
+                    self._parse_container_chunk(content[chunk_data_offset:chunk_data_offset + chunk_length], page)
+                
                 offset = chunk_data_offset + chunk_length
             except (struct.error, IndexError):
                 break
         return page
 
-    def _parse_chunk_type_2(self, content: bytes, page: SdocPage):
+    def _parse_container_chunk(self, content: bytes, page: SdocPage):
         offset = 0
         while offset < len(content):
             try:
                 header = content[offset:offset + 16]
                 if not header or len(header) < 16: break
-                object_size = struct.unpack_from('<I', header, 4)[0]
-                if object_size == 0: break
                 
-                # --- THIS IS THE FINAL FIX ---
-                # Check for the 0x930A identifier at the CORRECT offset (4th byte)
-                if header[4:6] == b'\x93\x0A':
+                object_size = struct.unpack_from('<I', header, 4)[0]
+                if object_size <= 0: break
+                
+                if header[:2] == b'\x93\xA0':
                     stroke_content = content[offset : offset + object_size]
                     stroke = self._parse_stroke(stroke_content)
                     if stroke and stroke.points:
@@ -67,16 +69,20 @@ class SdocImporter:
     def _parse_stroke(self, content: bytes) -> SdocStroke:
         stroke = SdocStroke()
         try:
-            header = content[0:48] # Read enough header data
-            # size is at offset 4, num_points is at offset 8, props_flag is at offset 12
-            _, size, num_points, props_flag = struct.unpack_from('<IIII', header)
+            header = content[4:16]
+            # <I: size, I: num_points, I: props_flag
+            _, num_points, props_flag = struct.unpack_from('<III', header)
             
             point_data_offset = 0x30 # 48 bytes
             
-            if props_flag == 0x00006900: # The flag from your diagnostic log
+            # This is the full logic for determining point data structure
+            if props_flag in (0x1d0301, 0x1d0311):
+                bytes_per_point = 20
+                format_string = '<fffff' # x, y, p, timestamp, tilt
+            elif props_flag in (0x1f0301, 0x1f0311, 0x00006900):
                  bytes_per_point = 24
                  format_string = '<ffffff' # x, y, p, tiltX, tiltY, timestamp
-            else: # Fallback for other common formats
+            else:
                 bytes_per_point = 12
                 format_string = '<fff' # x, y, p
 
@@ -86,7 +92,13 @@ class SdocImporter:
                 
                 point_data = struct.unpack_from(format_string, content, offset)
                 x, y, p = point_data[0], point_data[1], point_data[2]
-                t = point_data[5] if bytes_per_point == 24 else i
+                
+                if bytes_per_point == 24:
+                    t = point_data[5]
+                elif bytes_per_point == 20:
+                    t = point_data[3]
+                else:
+                    t = i # Fallback to index if no timestamp data
                 
                 stroke.points.append(SdocPoint(x, y, p, t))
                 offset += bytes_per_point
