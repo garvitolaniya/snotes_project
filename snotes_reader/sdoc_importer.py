@@ -1,6 +1,5 @@
 # File: sdoc_importer.py
-# Location: snotes_project/snotes_reader/sdoc_importer.py
-# This is the definitive version, using the correct data format for your specific notes.
+# This is the definitive version with the corrected identifier location.
 
 import zipfile
 import struct
@@ -30,68 +29,67 @@ class SdocImporter:
         except (gzip.BadGzipFile, EOFError, zlib.error):
             pass
 
+        offset = 16
+        while offset < len(content):
+            try:
+                chunk_type, chunk_length = struct.unpack_from('<II', content, offset)
+                offset += 8
+                chunk_data_offset = offset
+                if chunk_length == 0: break
+                if chunk_type == 2:
+                    self._parse_chunk_type_2(content[chunk_data_offset:chunk_data_offset + chunk_length], page)
+                offset = chunk_data_offset + chunk_length
+            except (struct.error, IndexError):
+                break
+        return page
+
+    def _parse_chunk_type_2(self, content: bytes, page: SdocPage):
         offset = 0
         while offset < len(content):
-            # We will now directly search for the unique header signature we found
-            header_signature = b'\x00\x01\x00\x00\x93\x0A'
-            header_start = content.find(header_signature, offset)
-            
-            if header_start == -1:
-                break # No more strokes found
-            
             try:
-                header_data = content[header_start : header_start + 48] # Read enough for a full header
-                object_size = struct.unpack_from('<I', header_data, 4)[0]
+                header = content[offset:offset + 16]
+                if not header or len(header) < 16: break
+                object_size = struct.unpack_from('<I', header, 4)[0]
+                if object_size == 0: break
                 
-                stroke_content = content[header_start : header_start + object_size]
-                stroke = self._parse_stroke(stroke_content)
-                if stroke and stroke.points:
-                    page.strokes.append(stroke)
+                # --- THIS IS THE FINAL FIX ---
+                # Check for the 0x930A identifier at the CORRECT offset (4th byte)
+                if header[4:6] == b'\x93\x0A':
+                    stroke_content = content[offset : offset + object_size]
+                    stroke = self._parse_stroke(stroke_content)
+                    if stroke and stroke.points:
+                        page.strokes.append(stroke)
                 
-                offset = header_start + object_size
+                offset += object_size
             except (struct.error, IndexError):
-                offset = header_start + 1 # Move past this point to avoid infinite loop
-                
-        return page
+                break
 
     def _parse_stroke(self, content: bytes) -> SdocStroke:
         stroke = SdocStroke()
         try:
-            # Unpack the full header to get the properties flag
-            # size_val, num_points, props_flag
-            _, _, props_flag = struct.unpack_from('<III', content, 4)
-        except struct.error:
-            return None
+            header = content[0:48] # Read enough header data
+            # size is at offset 4, num_points is at offset 8, props_flag is at offset 12
+            _, size, num_points, props_flag = struct.unpack_from('<IIII', header)
+            
+            point_data_offset = 0x30 # 48 bytes
+            
+            if props_flag == 0x00006900: # The flag from your diagnostic log
+                 bytes_per_point = 24
+                 format_string = '<ffffff' # x, y, p, tiltX, tiltY, timestamp
+            else: # Fallback for other common formats
+                bytes_per_point = 12
+                format_string = '<fff' # x, y, p
 
-        point_data_offset = 0x30  # 48 bytes
-        
-        # --- THIS IS THE CRITICAL FIX ---
-        # We now check for the specific flag (0x690000) from your file
-        # The value is 6881280 in decimal.
-        if props_flag == 6881280:
-            # This format uses 6 floats (24 bytes) per point: x, y, p, tiltX, tiltY, timestamp
-            bytes_per_point = 24
-            format_string = '<ffffff'
-        else:
-            # Fallback to the most common format
-            bytes_per_point = 12
-            format_string = '<fff'
-        
-        num_points = struct.unpack_from('<I', content, 8)[0]
-        offset = point_data_offset
-        
-        for i in range(num_points):
-            if offset + bytes_per_point > len(content):
-                break
-            try:
+            offset = point_data_offset
+            for i in range(num_points):
+                if offset + bytes_per_point > len(content): break
+                
                 point_data = struct.unpack_from(format_string, content, offset)
                 x, y, p = point_data[0], point_data[1], point_data[2]
-                
-                # Use the real timestamp if available, otherwise use index
                 t = point_data[5] if bytes_per_point == 24 else i
-
+                
                 stroke.points.append(SdocPoint(x, y, p, t))
                 offset += bytes_per_point
-            except (struct.error, IndexError):
-                break
-        return stroke
+            return stroke
+        except (struct.error, IndexError):
+            return stroke
