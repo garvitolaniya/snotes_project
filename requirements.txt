@@ -1,3 +1,11 @@
 # Base dependencies
-tkinter  # Usually comes with Python
-# Add any additional dependencies needed for Samsung Notes file processing here
+# tkinter is part of Python's standard library
+
+# File handling and compression
+zipfile  # Part of Python's standard library
+gzip     # Part of Python's standard library
+struct   # Part of Python's standard library
+
+# Testing dependencies (optional)
+pytest>=7.0.0
+pytest-cov>=4.0.0
