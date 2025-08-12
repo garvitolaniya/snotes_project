@@ -1,0 +1,3 @@
+# Base dependencies
+tkinter  # Usually comes with Python
+# Add any additional dependencies needed for Samsung Notes file processing here
