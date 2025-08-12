@@ -8,6 +8,8 @@ import os
 import re
 import struct
 import threading
+import json
+from snotes_reader import SdocImporter
 from snotes_reader.model import SdocDocument, SdocPage, SdocStroke, SdocPoint
 from snotes_reader.sdoc_importer import SdocImporter
 
